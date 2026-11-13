@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FloodGuard — Urban Flood Monitor</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2338bdf8'/%3E%3Cstop offset='1' stop-color='%232dd4bf'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M50 8 C70 40 84 58 84 73a34 34 0 0 1-68 0 C16 58 30 40 50 8z' fill='url(%23g)'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">🌊</span>
+        <div>
+          <h1>FloodGuard</h1>
+          <p class="tagline">
+            DSA-based urban flood monitoring &amp; safe-route navigation
+          </p>
+        </div>
+      </div>
+      <div class="sim-control">
+        <span class="chip" id="city-chip" title="Each city has its own random terrain and weather. Replay runs it again from the start.">City #…</span>
+        <span class="chip" id="time-chip">t = 0h</span>
+        <span class="chip" id="rain-chip">Rain: 0.00</span>
+        <button id="play-btn" class="btn primary" title="Run the storm continuously">
+          ▶ Play
+        </button>
+        <button id="tick-btn" class="btn" title="Advance simulation by 1 hour">
+          +1h
+        </button>
+        <button id="reset-btn" class="btn" title="Make a new random city with new random weather">
+          🎲 New city
+        </button>
+        <button id="replay-btn" class="btn" title="Run this same city and weather again from hour 0">
+          ↺ Replay
+        </button>
+        <button id="help-btn" class="btn" title="How to use FloodGuard">
+          ? How to use
+        </button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel map-panel">
+        <div class="panel-head">
+          <h2>City map</h2>
+          <div class="layer-toggles" role="group" aria-label="Map layers">
+            <label><input type="checkbox" data-layer="terrain" checked /> Terrain</label>
+            <label><input type="checkbox" data-layer="water" checked /> Water</label>
+            <label><input type="checkbox" data-layer="roads" checked /> Road risk</label>
+            <label><input type="checkbox" data-layer="storm" checked /> Storm</label>
+          </div>
+        </div>
+
+        <p id="story" class="story">Loading…</p>
+
+        <div class="map-wrap">
+          <svg id="map" preserveAspectRatio="xMidYMid meet"></svg>
+          <div class="map-overlay" id="map-msg">Loading network…</div>
+        </div>
+
+        <div class="map-legend">
+          <div class="legend-group">
+            <span class="legend-title">Water depth</span>
+            <span class="water-scale" aria-hidden="true"></span>
+            <span class="water-ticks"><span>0</span><span>25 cm</span><span>50 cm</span><span>75+ cm</span></span>
+          </div>
+          <div class="legend-group">
+            <span class="legend-title">Roads</span>
+            <span><i class="dot safe"></i>safe</span>
+            <span><i class="dot caution"></i>caution</span>
+            <span><i class="dot warning"></i>warning</span>
+            <span><i class="dot danger"></i>danger</span>
+          </div>
+          <div class="legend-group">
+            <span><i class="swatch-line safest"></i>safest route</span>
+            <span><i class="swatch-line shortest"></i>shortest route</span>
+            <span><i class="dot storm"></i>storm</span>
+            <span><i class="swatch-terrain"></i>low ← terrain → high</span>
+          </div>
+        </div>
+
+        <h2 class="section-gap">Flood timeline</h2>
+        <p class="hint">
+          How many roads are flooded each hour (top) and how hard it is raining
+          (bottom). Hover to read exact values.
+        </p>
+        <div id="timeline" class="timeline"></div>
+      </section>
+
+      <aside class="panel side">
+        <h2>Route planner</h2>
+        <p class="hint">
+          Click two intersections on the map, or pick them here. You'll see the
+          <b class="txt-safest">safest</b> route and the
+          <b>shortest</b> route side by side.
+        </p>
+        <label class="field"
+          >From
+          <select id="from-select"></select>
+        </label>
+        <label class="field"
+          >To
+          <select id="to-select"></select>
+        </label>
+        <label class="field"
+          >Algorithm
+          <select id="algo-select">
+            <option value="dijkstra" selected>Dijkstra</option>
+            <option value="astar">A*</option>
+          </select>
+        </label>
+        <button id="route-btn" class="btn primary">Compare routes</button>
+
+        <div id="route-result" class="route-result"></div>
+
+        <hr />
+
+        <h2>Live flood status</h2>
+        <div id="stats" class="stats"></div>
+
+        <h2>What flood levels mean</h2>
+        <table class="levels">
+          <thead>
+            <tr><th>Level</th><th>Water</th><th>Effect on traffic</th><th>Route cost</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="sev safe">safe</span></td><td>&lt; 5 cm</td><td>Normal driving</td><td>×1.0–1.3</td></tr>
+            <tr><td><span class="sev caution">caution</span></td><td>5–25 cm</td><td>Slow down, risk of skidding</td><td>×1.3–2.5</td></tr>
+            <tr><td><span class="sev warning">warning</span></td><td>25–50 cm</td><td>Most cars stall; tall vehicles only</td><td>×2.5–4</td></tr>
+            <tr><td><span class="sev danger">danger</span></td><td>≥ 50 cm</td><td>Impassable, vehicles can float away</td><td>×4+</td></tr>
+          </tbody>
+        </table>
+        <p class="hint">
+          Route cost is how much "longer" the safest-route search treats a
+          flooded road: cost = length × (1 + 6 × depth in m).
+        </p>
+
+        <h2>Deepest roads right now</h2>
+        <ul id="alerts" class="alerts"></ul>
+      </aside>
+    </main>
+
+    <div id="help" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="help-title">
+      <div class="modal-card">
+        <h2 id="help-title">How to use FloodGuard</h2>
+        <ol class="steps">
+          <li>
+            <b>Run the weather.</b> Press <b>▶ Play</b> (or <b>+1h</b> to step
+            one hour). <span class="txt-storm">Purple storms</span> arrive at
+            random. Each one has its own path, size, strength and length, with
+            dry spells in between (and now and then an extreme storm).
+          </li>
+          <li>
+            <b>Watch the water.</b> Rain lands everywhere, runs downhill and
+            pools in low ground: the river valley and the basins.
+            Deeper water is <span class="txt-water">brighter blue</span>. After
+            the storm passes, the water slowly drains away.
+          </li>
+          <li>
+            <b>See the effect on roads.</b> Roads change colour as the water on
+            them deepens: <span class="sev safe">safe</span>
+            <span class="sev caution">caution</span>
+            <span class="sev warning">warning</span>
+            <span class="sev danger">danger</span>. The sentence above the map
+            and the timeline below it tell you what is happening.
+          </li>
+          <li>
+            <b>Plan a trip.</b> Click a start and an end intersection. The
+            <span class="txt-safest">cyan</span> line is the safest route (it
+            avoids deep water); the dashed line is the shortest. The panel on
+            the right shows what the detour avoids.
+          </li>
+          <li>
+            <b>Explore.</b> Hover over any road or intersection for its water
+            depth. Use the layer switches above the map to show or hide
+            terrain, water, road risk and the storm. <b>🎲 New city</b> makes a
+            new random city and weather; <b>↺ Replay</b> runs the same one
+            again from the start (handy for comparing routes).
+          </li>
+        </ol>
+        <button id="help-close" class="btn primary">Got it</button>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
